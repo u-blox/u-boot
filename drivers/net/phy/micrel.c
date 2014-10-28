@@ -69,6 +69,85 @@ static int ksz90xx_startup(struct phy_device *phydev)
 		phydev->speed = SPEED_10;
 	return 0;
 }
+
+#define RMII_KSZ8081_MODE_STRAP_OVERRIDE 0x16
+#define RMII_KSZ8081_PHY_CTRL2 0x1F
+
+static int ksz8081_config(struct phy_device *phydev)
+{
+	int val;
+	u32 features;
+
+	/* For now, I'll claim that the generic driver supports
+	 * all possible port types */
+	features = (SUPPORTED_TP | SUPPORTED_MII
+			| SUPPORTED_AUI | SUPPORTED_FIBRE |
+			SUPPORTED_BNC);
+
+	/* Do we support autonegotiation? */
+	val = phy_read(phydev, MDIO_DEVAD_NONE, MII_BMSR);
+
+	if (val < 0)
+		return val;
+
+	if (val & BMSR_ANEGCAPABLE)
+		features |= SUPPORTED_Autoneg;
+
+	if (val & BMSR_100FULL)
+		features |= SUPPORTED_100baseT_Full;
+	if (val & BMSR_100HALF)
+		features |= SUPPORTED_100baseT_Half;
+	if (val & BMSR_10FULL)
+		features |= SUPPORTED_10baseT_Full;
+	if (val & BMSR_10HALF)
+		features |= SUPPORTED_10baseT_Half;
+
+	if (val & BMSR_ESTATEN) {
+		val = phy_read(phydev, MDIO_DEVAD_NONE, MII_ESTATUS);
+
+		if (val < 0)
+			return val;
+
+		if (val & ESTATUS_1000_TFULL)
+			features |= SUPPORTED_1000baseT_Full;
+		if (val & ESTATUS_1000_THALF)
+			features |= SUPPORTED_1000baseT_Half;
+		if (val & ESTATUS_1000_XFULL)
+			features |= SUPPORTED_1000baseX_Full;
+		if (val & ESTATUS_1000_XHALF)
+			features |= SUPPORTED_1000baseX_Half;
+	}
+
+	phydev->supported = features;
+	phydev->advertising = features;
+
+	/* Disable B-CAST for MDIO */
+	phy_write(phydev, MDIO_DEVAD_NONE,RMII_KSZ8081_MODE_STRAP_OVERRIDE, 0x0202);
+
+	genphy_config_aneg(phydev);
+
+	return 0;
+}
+
+static struct phy_driver KSZ8081_driver = {
+	.name		= "Micrel KSZ8081 or KSZ8091",
+	.uid		= 0x00221560,
+	.mask	= 0x00fffff0,
+	.features = PHY_BASIC_FEATURES,
+	.config = &ksz8081_config,
+	.startup = &genphy_startup,
+	.shutdown = &genphy_shutdown,
+};
+	/*.flags		= PHY_HAS_MAGICANEG | PHY_HAS_INTERRUPT,
+	.features	= (PHY_BASIC_FEATURES),
+	.startup = &ksz8081_startup,
+	.shutdown = &genphy_shutdown,
+	.config_init	= kszphy_config_init,
+	.config_aneg	= genphy_config_aneg,
+	.read_status	= genphy_read_status,
+	.ack_interrupt	= kszphy_ack_interrupt,
+	.config_intr	= kszphy_config_intr,*/
+
 #ifdef CONFIG_PHY_MICREL_KSZ9021
 
 /*
@@ -184,6 +263,7 @@ static struct phy_driver ksz9031_driver = {
 int phy_micrel_init(void)
 {
 	phy_register(&KSZ804_driver);
+	phy_register(&KSZ8081_driver);
 #ifdef CONFIG_PHY_MICREL_KSZ9021
 	phy_register(&ksz9021_driver);
 #else
